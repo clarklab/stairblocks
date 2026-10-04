@@ -17,7 +17,7 @@ export interface StairConfig {
 }
 
 export const DEFAULT_CONFIG: StairConfig = {
-  rise: 35, run: 44, width: 96, risers: 5,
+  rise: 36, run: 44, width: 96, risers: 5,
   material: 'treated', tread: 'two6', ending: 'open',
   railing: false, closedRisers: true,
 }
@@ -56,6 +56,35 @@ export interface PlanCheck {
   detail: string
 }
 
+export interface SupportRow {
+  /** Local downhill distance from the flight's top, in inches. */
+  z: number
+  /** Local elevation at the beam's top; downhill face touches the stringer underside. */
+  beamTop: number
+  beamDepth: number
+  /** Two 2x members combined, measured along the direction of travel. */
+  beamWidth: number
+  beamLength: number
+  /** Centers in inches from the left tread edge. */
+  postPositions: number[]
+  postWidth: number
+  /** World-ground-to-beam-underside height, including the flight base elevation. */
+  postHeight: number
+}
+
+export interface SupportFlight {
+  flight: 'straight' | 'lower' | 'upper'
+  baseElevation: number
+  run: number
+  rise: number
+  risers: number
+  rows: SupportRow[]
+  /** Geometry only; the bottom ground/landing bearing is an assumed support. */
+  maxUnsupportedSpan: number
+  /** True when the illustrative beam/post layout cannot fit or leaves an excessive gap. */
+  unresolved: boolean
+}
+
 export interface StairPlan {
   config: StairConfig
   geometry: {
@@ -87,6 +116,7 @@ export interface StairPlan {
     lowerBlockingRows: number
     upperBlockingRows: number
     noseProjection: number
+    supportFlights: SupportFlight[]
   }
   materials: MaterialItem[]
   cutList: CutItem[]
@@ -159,6 +189,43 @@ function normalizeConfig(input: StairConfig): StairConfig {
   }
 }
 
+/**
+ * Independent gravity-support concept, not beam/post or lateral-system engineering.
+ * The first row has a small top overhang whose final bearing detail needs design.
+ */
+function supportFlight(flight: SupportFlight['flight'], baseElevation: number, run: number, rise: number, risers: number, width: number, treadThickness: number, going: number): SupportFlight {
+  const beamDepth = 7.25
+  const beamWidth = 3
+  const postWidth = 5.5
+  const minimumPostHeight = 6
+  // Clearance for the schematic 12-inch footing cap beside the porch face.
+  // This setback leaves a top overhang that still requires a designed bearing detail.
+  const topRowZ = 6.75
+  const slope = (rise / risers) / going
+  const underside = (z: number) => Math.max(0, rise - treadThickness - 11.25 * Math.sqrt(1 + slope ** 2) - z * slope)
+  const postCount = Math.max(2, Math.ceil((width - postWidth) / 48) + 1)
+  const postPositions = Array.from({ length: postCount }, (_, index) => postWidth / 2 + index * (width - postWidth) / (postCount - 1))
+  const rows: SupportRow[] = []
+  let unresolved = run < topRowZ + beamWidth / 2 + 0.5
+  if (!unresolved) {
+    const segments = Math.max(1, Math.ceil((run - topRowZ) / 72))
+    for (let index = 0; index < segments; index++) {
+      const z = topRowZ + index * (run - topRowZ) / segments
+      // Use the downhill face so a horizontal beam does not intersect the sloped wood.
+      const beamTop = underside(z + beamWidth / 2)
+      const postHeight = baseElevation + beamTop - beamDepth
+      if (postHeight < minimumPostHeight) {
+        unresolved = true
+        continue
+      }
+      rows.push({ z, beamTop, beamDepth, beamWidth, beamLength: width, postPositions: [...postPositions], postWidth, postHeight })
+    }
+  }
+  const bearingPositions = [0, ...rows.map((row) => row.z), run]
+  const maxUnsupportedSpan = Math.max(...bearingPositions.slice(1).map((position, index) => position - bearingPositions[index]))
+  return { flight, baseElevation, run, rise, risers, rows, maxUnsupportedSpan, unresolved: unresolved || rows.length === 0 || maxUnsupportedSpan > 72 + 1e-8 }
+}
+
 export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverrides: PriceOverrides = {}): StairPlan {
   const config = normalizeConfig(input)
   const { rise, run, width, risers, material, tread, ending, railing, closedRisers } = config
@@ -191,6 +258,13 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
   const blockingRows = isTurn ? lowerBlockingRows + upperBlockingRows : Math.max(2, Math.ceil(run / 48) + 1)
   const blockingLength = stringerSpacing - 1.5
   const landingSize = ending === 'turn' ? Math.max(36, width) : 0
+  const supportFlights = isTurn ? [
+    supportFlight('lower', 0, lowerRun, lowerRisers * riserHeight, lowerRisers, width, treadThickness, going),
+    supportFlight('upper', lowerRisers * riserHeight, upperRun, upperRisers * riserHeight, upperRisers, width, treadThickness, going),
+  ] : [supportFlight('straight', 0, run, rise, risers, width, treadThickness, going)]
+  const supportRows = supportFlights.flatMap((flight) => flight.rows)
+  const supportPostCount = supportRows.reduce((sum, row) => sum + row.postPositions.length, 0)
+  const supportBearingCount = supportRows.length * stringerCount
   const materials: MaterialItem[] = []
   const cutList: CutItem[] = []
   const checks: PlanCheck[] = []
@@ -227,6 +301,12 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
     lumber('stringers', 'Stringers · treated 2 × 12', 'Rough blank includes 12″ layout allowance; template and end cuts need field verification.', stringerCount, stringerLength, 2.65)
   }
   lumber('blocking', 'Back bracing / blocking · treated 2 × 6', `${blockingRows} rows between stringers; connection design not specified.`, blockingRows * (stringerCount - 1), blockingLength, 1.24)
+  supportFlights.forEach((flight) => flight.rows.forEach((row, index) => {
+    const id = `${flight.flight}-${index + 1}`
+    lumber(`support-beams-${id}`, 'Independent support beam · treated 2 × 8', 'Two plies per beam; illustrative size only. Bearing seats, top overhang, lamination and beam capacity require design.', 2, row.beamLength, 1.85)
+    lumber(`support-posts-${id}`, 'Independent support posts · treated 6 × 6', 'Gross ground-to-beam blank. Adjust for approved post-base/cap elevations; verify post and footing design.', row.postPositions.length, row.postHeight, 5.4)
+  }))
+  if (supportRows.length) lumber('support-brace-stock', 'Lateral-bracing stock allowance · treated 2 × 4', 'Four rough 36″ brace blanks per support row. Bracing in both directions and all connections still require design.', supportRows.length * 4, 36, 0.89)
 
   if (closedRisers) {
     const riserRate = material === 'cedar' ? 4.25 : material === 'composite' ? 5.5 : 1.85
@@ -241,8 +321,15 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
   const landingScrews = landingDeckBoards * landingJoists * 2
   const screwCount = Math.ceil((treadScrews + riserScrews + landingScrews) * 1.1)
   add(material === 'composite' ? 'composite-screws' : 'deck-screws', material === 'composite' ? 'Composite face screws · 100 pack' : 'Exterior deck screws · 100 pack', `${screwCount} estimated, including 10% spare. Two per board/stringer intersection; product instructions govern.`, Math.ceil(screwCount / 100), 'box', material === 'composite' ? 34 : 18, 'hardware')
-  add('stringer-connectors', 'Rated stringer connectors', 'One per stringer at the top of each flight; select an approved connector and its specified fasteners for the actual connection.', totalStringerCount, 'each', 9.8, 'hardware')
-  add('connector-fasteners', 'Connector fasteners · allowance', 'Manufacturer-listed nails/screws for hangers and blocking. Deck screws are not connector fasteners.', Math.max(1, Math.ceil(totalStringerCount / 5)), 'box', 24, 'hardware')
+  if (supportBearingCount) add('support-restraint', 'Stringer-to-beam restraint allowance', 'At each modeled beam/stringer bearing. Select a designed bearing seat and rated restraint connection; no attachment into the concrete porch is included.', supportBearingCount, 'each', 9.8, 'hardware')
+  if (supportPostCount) {
+    add('support-post-bases', 'Independent post-base allowance', 'One per support post; final anchor, corrosion protection and standoff depend on the engineered footing detail.', supportPostCount, 'each', 24, 'hardware')
+    add('support-post-caps', 'Independent beam-to-post cap allowance', 'One per support post; a cap alone does not establish lateral stability.', supportPostCount, 'each', 22, 'hardware')
+    add('support-footings', 'Independent support footing allowance', 'One per support post. Size, soil bearing, frost depth, excavation and concrete quantity remain to be designed; an existing patio is not assumed adequate.', supportPostCount, 'allowance', 75, 'hardware')
+  }
+  const unresolvedFlights = supportFlights.filter((flight) => flight.unresolved).length
+  if (unresolvedFlights) add('unresolved-support', 'Unresolved low-profile / intermediate support', 'The illustrated beam/post assembly does not fit or cover this flight. Placeholder only; a different support design and revised quote are required.', unresolvedFlights, 'allowance', 150, 'hardware')
+  add('connector-fasteners', 'Structural connector fasteners · allowance', 'Manufacturer-listed fasteners for beam restraint, bases, caps, bracing and blocking. Deck screws are not connector fasteners.', Math.max(1, Math.ceil((supportBearingCount * 6 + supportPostCount * 12 + supportRows.length * 16) / 100)), 'box', 24, 'hardware')
   add('base-support', 'Bottom landing / base allowance', 'Budget placeholder for level bearing and landing; footing depth, anchors, concrete quantity and drainage require site assessment.', 1, 'allowance', 95, 'hardware')
 
   if (railing) {
@@ -272,8 +359,9 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
   check('rail', risers < 4 || railing, railing ? 'Handrail allowance included' : 'Handrail needed at 4+ risers', 'Final handrail must be graspable and continuous; a decorative top rail alone may not qualify.')
   if (rise > 30) check('guard', railing, railing ? 'Guard allowance included' : 'Exposed-side guards need review', 'Open sides more than 30″ above adjacent grade generally need guards; confirm openings, height and attachment locally.')
   if (!closedRisers && rise > 30) check('open-risers', riserHeight - treadThickness < 4, 'Open-riser gap needs review', 'Where an opening is more than 30″ above grade, a 4″ sphere must not pass under the tread under the 2021 IRC reference.')
-  const longestRun = isTurn ? Math.max(lowerRun, upperRun) : run
-  check('span', longestRun <= 72, longestRun <= 72 ? 'Short-run framing concept' : 'Intermediate support needed', 'AWC DCA 6 cut-stringer reference span is 6′ horizontally per flight, not along the sloped board. This model does not design additional intermediate beams, posts, footings or lateral bracing.')
+  const supportLayoutFits = supportFlights.every((flight) => !flight.unresolved)
+  checks.push({ id: 'span', status: supportLayoutFits ? 'info' : 'warn', title: supportLayoutFits ? 'Independent support rows are included' : 'Support layout needs a different detail', detail: supportLayoutFits ? `The largest modeled horizontal support gap is ${inchLabel(Math.max(...supportFlights.map((flight) => flight.maxUnsupportedSpan)))}. Rows target the DCA 6 6′ span reference; this does not validate the shared beams, bearing seats, top overhang or lateral system.` : 'A flight has insufficient beam/post clearance or a support gap over 6′. The missing support is an unresolved allowance; use a site-designed low-profile frame, bearing or additional supports before building.' })
+  checks.push({ id: 'freestanding', status: 'info', title: 'Freestanding support design is still required', detail: 'The concrete porch is existing and carries no modeled stair load. Independent foundations, beam sizes, stringer end bearing, top overhang, restraint and lateral bracing in both directions must be designed; DCA 6 does not certify this shared-beam assembly.' })
   if (rise > 151) check('flight-rise', (isTurn ? upperRisers * riserHeight : rise) <= 151, 'Check rise between landings', 'The 2021 IRC reference limits a flight to 12′ 7″ of vertical rise between landings.')
   const throat = 11.25 - going * riserHeight / Math.hypot(going, riserHeight)
   check('throat', throat >= 5, `${inchLabel(throat)} approximate stringer throat`, 'AWC DCA 6 cut-stringer detail retains at least 5″ of wood. Verify species, grade, actual board and final layout before cutting.')
@@ -286,16 +374,19 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
   const contingency = roundMoney(subtotal * 0.1)
   return {
     config,
-    geometry: { riserHeight, going, treadDepth, treadThickness, boardsPerTread, boardWidth, boardGap, treadCount, stringerCount, totalStringerCount, stringerSpacing, stringerLength, stringerPositions, blockingRows, blockingLength, landingSize, landingBoardGap: deckingGap, landingDeckBoards, lowerRisers, upperRisers, lowerRun, upperRun, lowerStringerLength, upperStringerLength, lowerBlockingRows, upperBlockingRows, noseProjection: treadDepth - going },
+    geometry: { riserHeight, going, treadDepth, treadThickness, boardsPerTread, boardWidth, boardGap, treadCount, stringerCount, totalStringerCount, stringerSpacing, stringerLength, stringerPositions, blockingRows, blockingLength, landingSize, landingBoardGap: deckingGap, landingDeckBoards, lowerRisers, upperRisers, lowerRun, upperRun, lowerStringerLength, upperStringerLength, lowerBlockingRows, upperBlockingRows, noseProjection: treadDepth - going, supportFlights },
     materials, cutList, checks, subtotal, contingency, total: roundMoney(subtotal + contingency), screwCount,
     assumptions: [
       'Illustrative USD retail prices, not live Home Depot inventory or a supplier quote. Edit unit prices to match your store.',
       'Stock model uses 8′, 10′, 12′ and 16′ boards with a ⅛″ saw kerf; local species, grades, lengths and actual dimensions vary. Offcuts are not shared between different component groups.',
       isTurn ? 'Turn stairs have two flights and an intermediate landing: tread count is two fewer than total risers. Run is both flight runs combined, excluding the intermediate and bottom landings. Rise is finished ground-to-porch height.' : 'Porch surface is the top landing: the model has one fewer tread than risers. Rise is finished ground-to-porch height; run excludes bottom landing space.',
       'The estimate includes a 10% contingency after the listed materials. Tax, delivery, labor, tools, permits, demolition, soil and plants are excluded.',
-      'Pressure-treated structural stringers and blocking are budgeted for every finish. Composite is a tread surface, not structural framing.',
+      'The existing concrete porch is outside the estimate. Stairs stand on independent supports and butt against the porch; porch anchors or load-bearing attachment into its face are not included.',
+      'Pressure-treated stringers, blocking, doubled 2 × 8 support beams, 6 × 6 posts and rough bracing stock are budgeted for every finish. These member sizes are illustrative and are not structurally verified. Composite is a tread surface.',
+      'Support rows follow the preview stringer underside and aim for horizontal gaps no greater than 6′. Bottom bearing is assumed on the separately budgeted ground landing or turn landing. Beam seats and the small top overhang need a final detail; no bearing notches are prescribed.',
+      'Post cuts are gross world-ground-to-beam dimensions. Final cuts must account for post bases/caps, footing levels and grade. Footing and lateral-bracing allowances are placeholders; freestanding stability is not established by post bases or caps alone.',
       material === 'composite' ? 'Composite preview uses two 5½″ boards with a ¼″ gap and a 9″ maximum stringer spacing, following the Trex Enhance stair example. Verify actual profile, end gaps, temperature requirements and the selected product’s current installation instructions.' : 'Wood decking uses actual 5½″ widths for nominal 2 × 6 and 11¼″ for nominal 2 × 12; paired planks and landing boards use an illustrative ⅛″ gap. Adjust for species, moisture and supplier instructions.',
-      'Connection markers and cut lengths illustrate placement only. Verify porch attachment, bottom support, final stringer template, bracing, headroom, landings and local code before building.',
+      'Connection markers and cut lengths illustrate placement only. Verify independent bearing, foundations, final stringer template, bracing, headroom, landings and local code before building.',
       'Model-code checks are based on the linked 2021 IRC reference and AWC DCA 6; passing these checks is not code approval or structural certification.',
     ],
   }

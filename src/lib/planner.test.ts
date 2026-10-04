@@ -5,7 +5,7 @@ describe('stair geometry and checks', () => {
   it('uses the porch as the final landing, with one fewer tread than rises', () => {
     const plan = calculatePlan({ ...DEFAULT_CONFIG, railing: true })
     expect(plan.geometry.treadCount).toBe(4)
-    expect(plan.geometry.riserHeight).toBe(7)
+    expect(plan.geometry.riserHeight).toBe(7.2)
     expect(plan.geometry.going).toBe(11)
     expect(plan.geometry.boardWidth).toBe(5.5)
     expect(plan.geometry.treadDepth).toBe(11.125)
@@ -77,12 +77,12 @@ describe('purchased stock and material budgets', () => {
     const plan = calculatePlan({ ...DEFAULT_CONFIG, rise: 100, run: 200, risers: 15 })
     expect(plan.cutList.find((item) => item.id === 'stringers-custom')?.stockLength).toBe(0)
     expect(plan.checks.find((check) => check.id === 'stringers-stock')?.status).toBe('warn')
-    expect(plan.checks.find((check) => check.id === 'span')?.status).toBe('warn')
+    expect(plan.checks.find((check) => check.id === 'span')?.status).toBe('info')
   })
 
   it('recalculates totals from edited prices and includes contingency exactly once', () => {
     const original = calculatePlan(DEFAULT_CONFIG)
-    const item = original.materials.find((row) => row.id === 'stringer-connectors')!
+    const item = original.materials.find((row) => row.id === 'support-restraint')!
     const edited = calculatePlan(DEFAULT_CONFIG, { [item.id]: 20 })
     expect(edited.subtotal).toBeCloseTo(original.subtotal + item.quantity * (20 - item.unitPrice), 2)
     expect(edited.total).toBeCloseTo(edited.subtotal + edited.contingency, 2)
@@ -119,7 +119,7 @@ describe('purchased stock and material budgets', () => {
   })
 
   it('replaces one stair tread with a landing and budgets both flight stringer sets', () => {
-    const plan = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', run: 33, railing: true })
+    const plan = calculatePlan({ ...DEFAULT_CONFIG, rise: 35, ending: 'turn', run: 33, railing: true })
     const geometry = plan.geometry
     const cuts = (prefix: string) => plan.cutList.filter((item) => item.id.startsWith(prefix)).reduce((sum, item) => sum + item.quantity, 0)
     expect(geometry.lowerRisers).toBe(2)
@@ -134,10 +134,11 @@ describe('purchased stock and material budgets', () => {
     expect(cuts('stringers-upper-')).toBe(geometry.stringerCount)
     expect(cuts('blocking-')).toBe(geometry.blockingRows * (geometry.stringerCount - 1))
     expect(geometry.totalStringerCount).toBe(2 * geometry.stringerCount)
-    expect(plan.materials.find((item) => item.id === 'stringer-connectors')?.quantity).toBe(geometry.totalStringerCount)
+    const bearingRows = geometry.supportFlights.reduce((sum, flight) => sum + flight.rows.length, 0)
+    expect(plan.materials.find((item) => item.id === 'support-restraint')?.quantity).toBe(bearingRows * geometry.stringerCount)
     expect(plan.cutList.find((item) => item.id.startsWith('stringers-lower-'))?.length).toBeCloseTo(Math.hypot(14, 11) + 12)
     expect(plan.cutList.find((item) => item.id.startsWith('stringers-upper-'))?.length).toBeCloseTo(Math.hypot(21, 22) + 12)
-    expect(plan.checks.filter((check) => check.status === 'warn')).toEqual([])
+    expect(plan.checks.filter((check) => check.status === 'warn').map((check) => check.id)).toEqual(['span'])
   })
 
   it('preserves total rise and combined run through odd and even turn splits', () => {
@@ -152,16 +153,80 @@ describe('purchased stock and material budgets', () => {
     }
   })
 
-  it('checks unsupported run per flight and rejects a turn with no usable lower flight', () => {
+  it('adds intermediate supports per flight and rejects a turn with no usable lower flight', () => {
     const supportedTurn = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', rise: 70, risers: 10, run: 88 })
-    expect(supportedTurn.checks.find((check) => check.id === 'span')?.status).toBe('pass')
+    expect(supportedTurn.checks.find((check) => check.id === 'span')?.status).toBe('info')
     const longTurn = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', rise: 126, risers: 18, run: 176 })
-    expect(longTurn.checks.find((check) => check.id === 'span')?.status).toBe('warn')
+    expect(longTurn.checks.find((check) => check.id === 'span')?.status).toBe('info')
+    expect(longTurn.geometry.supportFlights.every((flight) => flight.rows.length === 2 && flight.maxUnsupportedSpan <= 72)).toBe(true)
     const tooFewRisers = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', risers: 2, rise: 28, run: 22 })
     expect(tooFewRisers.config.risers).toBe(4)
     expect(tooFewRisers.geometry.lowerRisers).toBe(2)
     expect(tooFewRisers.geometry.upperRisers).toBe(2)
     expect(tooFewRisers.checks.find((check) => check.id === 'input')?.status).toBe('warn')
+  })
+
+  it('budgets independent beams, posts and footings without hanging stairs from the porch', () => {
+    const plan = calculatePlan(DEFAULT_CONFIG)
+    const flight = plan.geometry.supportFlights[0]
+    expect(DEFAULT_CONFIG.rise).toBe(36)
+    expect(flight.flight).toBe('straight')
+    expect(flight.baseElevation).toBe(0)
+    expect(flight.rows).toHaveLength(1)
+    expect(flight.unresolved).toBe(false)
+    const row = flight.rows[0]
+    expect(row.postPositions).toEqual([2.75, 48, 93.25])
+    expect(row.postHeight).toBeCloseTo(row.beamTop - row.beamDepth)
+    const cuts = (prefix: string) => plan.cutList.filter((item) => item.id.startsWith(prefix)).reduce((sum, item) => sum + item.quantity, 0)
+    expect(cuts('support-beams-')).toBe(2)
+    expect(cuts('support-posts-')).toBe(3)
+    expect(cuts('support-brace-stock-')).toBe(4)
+    for (const id of ['support-post-bases', 'support-post-caps', 'support-footings']) expect(plan.materials.find((item) => item.id === id)?.quantity).toBe(3)
+    expect(plan.materials.some((item) => item.id === 'stringer-connectors')).toBe(false)
+    expect(plan.materials.find((item) => item.id === 'support-restraint')?.quantity).toBe(plan.geometry.stringerCount)
+    expect(plan.checks.find((check) => check.id === 'freestanding')?.detail).toContain('must be designed')
+  })
+
+  it('positions intermediate beam contact below the actual stringer profile', () => {
+    const plan = calculatePlan({ ...DEFAULT_CONFIG, rise: 84, run: 121, risers: 12 })
+    const flight = plan.geometry.supportFlights[0]
+    expect(flight.rows).toHaveLength(2)
+    expect(flight.maxUnsupportedSpan).toBeLessThanOrEqual(72)
+    expect(flight.unresolved).toBe(false)
+    const slope = plan.geometry.riserHeight / plan.geometry.going
+    for (const row of flight.rows) {
+      const underside = Math.max(0, flight.rise - plan.geometry.treadThickness - 11.25 * Math.sqrt(1 + slope ** 2) - (row.z + row.beamWidth / 2) * slope)
+      expect(row.beamTop).toBeCloseTo(underside)
+      expect(row.postHeight).toBeGreaterThanOrEqual(6)
+      expect(row.z - row.beamWidth / 2).toBeGreaterThanOrEqual(0)
+      expect(row.z + row.beamWidth / 2).toBeLessThan(flight.run)
+    }
+  })
+
+  it('extends upper-turn posts to ground while keeping landing supports separate', () => {
+    const plan = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', rise: 70, risers: 10, run: 88 })
+    const upper = plan.geometry.supportFlights.find((flight) => flight.flight === 'upper')!
+    expect(upper.baseElevation).toBe(35)
+    expect(upper.rows.length).toBeGreaterThan(0)
+    for (const row of upper.rows) {
+      expect(row.postHeight).toBeCloseTo(upper.baseElevation + row.beamTop - row.beamDepth)
+      expect(row.postHeight).toBeGreaterThan(row.beamTop)
+    }
+    expect(plan.materials.find((item) => item.id === 'landing-foundations')?.quantity).toBe(4)
+    const supportPosts = plan.geometry.supportFlights.reduce((sum, flight) => sum + flight.rows.reduce((count, row) => count + row.postPositions.length, 0), 0)
+    expect(plan.materials.find((item) => item.id === 'support-footings')?.quantity).toBe(supportPosts)
+  })
+
+  it('keeps narrow support posts inside the beam and flags low-profile layouts honestly', () => {
+    const narrow = calculatePlan({ ...DEFAULT_CONFIG, width: 36 })
+    expect(narrow.geometry.supportFlights[0].rows[0].postPositions).toEqual([2.75, 33.25])
+    const low = calculatePlan({ ...DEFAULT_CONFIG, rise: 14, run: 144, risers: 3 })
+    expect(low.geometry.supportFlights[0].rows).toEqual([])
+    expect(low.geometry.supportFlights[0].unresolved).toBe(true)
+    expect(low.checks.find((check) => check.id === 'span')?.status).toBe('warn')
+    expect(low.materials.find((item) => item.id === 'unresolved-support')?.quantity).toBe(1)
+    expect(low.cutList.some((item) => item.id.startsWith('support-posts-'))).toBe(false)
+    expect(low.materials.every((item) => Number.isFinite(item.total) && item.quantity > 0)).toBe(true)
   })
 
   it('budgets planter boxes independently and updates riser quantities when toggled', () => {
