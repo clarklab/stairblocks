@@ -1,10 +1,10 @@
-import { calculatePlan } from './planner'
-import type { StairConfig, SupportFlight } from './planner'
+import { calculatePlan, COMPOSITE_COLORS } from './planner'
+import type { StairConfig, SupportFlight, PortableMember } from './planner'
 
 /** Render geometry is in world feet; the planning engine remains in inches. */
 export type Vec3 = [number, number, number]
 export type SceneStage = 'site' | 'supports' | 'stringers' | 'blocking' | 'risers' | 'treads' | 'fasteners' | 'complete'
-export type SceneCategory = 'concrete' | 'support' | 'stringer' | 'blocking' | 'riser' | 'tread' | 'hardware' | 'rail' | 'planter'
+export type SceneCategory = 'concrete' | 'support' | 'stringer' | 'blocking' | 'riser' | 'tread' | 'hardware' | 'rail' | 'planter' | 'skirt'
 export type SceneView = 'finished' | 'framing' | 'fasteners' | 'exploded'
 export interface SceneFace { vertices: Vec3[]; color: string; doubleSided?: boolean }
 export interface ScenePiece {
@@ -36,7 +36,7 @@ const IDENTITY: Transform = { origin: [0, 0, 0], angle: 0 }
 const ZERO: Vec3 = [0, 0, 0]
 const FT = 1 / 12
 const COLORS = {
-  frame: '#c8b68c', treated: '#d5c39c', cedar: '#c99671', composite: '#a3a18f',
+  frame: '#c8b68c', treated: '#d5c39c', cedar: '#c99671',
   blocking: '#b9bd99', metal: '#929c90', screw: '#5a6256', concrete: '#cbcec2', cap: '#d9dbd0',
 }
 const boxFaces = [[4, 5, 6, 7], [1, 0, 3, 2], [0, 4, 7, 3], [5, 1, 2, 6], [0, 1, 5, 4], [3, 7, 6, 2]]
@@ -58,6 +58,9 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
   const dimensions: SceneDimension[] = []
   const labels: SceneLabel[] = []
   const finish = COLORS[config.material]
+  const treadFinish = config.compositeTreads
+    ? (COMPOSITE_COLORS.find((color) => color.id === config.compositeColor) ?? COMPOSITE_COLORS[0]).hex
+    : finish
   const width = config.width
   let serial = 0
 
@@ -81,7 +84,7 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     const length = Math.hypot(...delta)
     if (length < 0.01) return
     const y = unit(delta)
-    const x = unit(cross(y, Math.abs(y[2]) < 0.95 ? [0, 0, 1] : [1, 0, 0]))
+    const x: Vec3 = Math.abs(y[0]) < 0.00001 ? [1, 0, 0] : unit(cross(y, [0, 0, 1]))
     const z = unit(cross(x, y))
     const center = scale(sum(from, to), 0.5)
     const points = ([-1, 1] as const).flatMap((sz) => [[-1, -1, sz], [1, -1, sz], [1, 1, sz], [-1, 1, sz]].map(([sx, sy, zz]) => sum(center, sum(scale(x, sx * thickness / 2), sum(scale(y, sy * length / 2), scale(z, zz * depth / 2))))))
@@ -99,18 +102,6 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     piece(`fixing-${id}`, 'fasteners', 'hardware', [{ vertices: circle, color: COLORS.screw, doubleSided: normal === 'side' }], transform, exploded, sum(exploded, [0, 4, 0]))
   }
 
-  function footing(id: string, center: Vec3, transform: Transform, exploded: Vec3 = ZERO) {
-    const radius = 6
-    const bottom = center[1] - 0.75
-    const top = center[1] + 0.4
-    const ring = (y: number): Vec3[] => Array.from({ length: 8 }, (_, index) => [center[0] + Math.cos(index * Math.PI / 4) * radius, y, center[2] + Math.sin(index * Math.PI / 4) * radius])
-    const low = ring(bottom)
-    const high = ring(top)
-    const faces: SceneFace[] = [{ vertices: [...high].reverse(), color: COLORS.concrete }]
-    for (let index = 0; index < 8; index++) faces.push({ vertices: [low[index], high[index], high[(index + 1) % 8], low[(index + 1) % 8]], color: COLORS.concrete })
-    piece(id, 'supports', 'support', faces, transform, exploded, [0, 5, 0])
-  }
-
   function label(point: Vec3, text: string, transform: Transform, kind: SceneLabel['kind'], showIn: SceneView[], category?: SceneCategory) {
     labels.push({ position: world(point, transform), text, kind, showIn, category })
   }
@@ -121,27 +112,43 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     label([0, config.rise + 4, -18], 'Existing concrete porch', transform, 'note', ['framing'], 'concrete')
   }
 
-  function stringer(x: number, risers: number, transform: Transform) {
+  function stringer(x: number, risers: number, transform: Transform, baseCut: number) {
     const count = risers - 1
     const run = count * g.going
     const slope = g.riserHeight / g.going
-    const profile: [number, number][] = [[0, 0], [0, g.riserHeight - g.treadThickness]]
+    let profile: [number, number][] = [[0, 0], [0, g.riserHeight - g.treadThickness]]
     for (let index = 0; index < count; index++) {
       profile.push([(index + 1) * g.going, (index + 1) * g.riserHeight - g.treadThickness])
       profile.push([(index + 1) * g.going, (index + 2) * g.riserHeight - g.treadThickness])
     }
     const rearBottom = Math.max(0, risers * g.riserHeight - g.treadThickness - 11.25 * Math.sqrt(1 + slope * slope))
     profile.push([run, rearBottom], [Math.min(run, Math.max(0, run - rearBottom / slope)), 0])
+    // The floor crossrail supports every toe. Clip to its top plane instead of
+    // drawing the original stringer through the portable frame.
+    if (baseCut > 0) {
+      const clipped: [number, number][] = []
+      profile.forEach((point, index) => {
+        const next = profile[(index + 1) % profile.length]
+        const inside = point[1] >= baseCut
+        if (inside) clipped.push(point)
+        if (inside !== (next[1] >= baseCut)) {
+          const ratio = (baseCut - point[1]) / (next[1] - point[1])
+          clipped.push([point[0] + ratio * (next[0] - point[0]), baseCut])
+        }
+      })
+      profile = clipped
+    }
     const left: Vec3[] = profile.map(([u, y]) => [x - 0.75, y, run - u])
     const right: Vec3[] = profile.map(([u, y]) => [x + 0.75, y, run - u])
     const faces: SceneFace[] = []
     // Per-step triangles avoid a single concave face painting over multiple tread levels.
-    const underside = (z: number) => Math.max(0, rearBottom - z * slope)
+    const underside = (z: number) => Math.max(baseCut, rearBottom - z * slope)
     for (let step = 0; step < count; step++) {
       const top = (count - step) * g.riserHeight - g.treadThickness
+      if (top <= baseCut) continue
       const near = step * g.going
       const far = (step + 1) * g.going
-      const groundContact = rearBottom / slope
+      const groundContact = (rearBottom - baseCut) / slope
       const split = groundContact > near && groundContact < far ? [near, groundContact, far] : [near, far]
       for (let segment = 0; segment < split.length - 1; segment++) {
         const first = split[segment]
@@ -161,41 +168,112 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     piece('notched-stringer', 'stringers', 'stringer', faces, transform, [x * 0.25, 0, 0], [x * 0.3, 11, 2])
   }
 
+  function portableMembers(members: PortableMember[], transform: Transform, exploded: Vec3) {
+    members.forEach((member) => {
+      const brace = member.kind === 'brace'
+      const stage: SceneStage = brace ? 'blocking' : 'supports'
+      const category: SceneCategory = brace ? 'blocking' : 'support'
+      const color = brace ? COLORS.blocking : COLORS.frame
+      if (brace && member.from && member.to) {
+        const sideBrace = Math.abs(member.from[0] - member.to[0]) < 0.00001
+        beam(`portable-${member.id}`, stage, category, member.from, member.to, sideBrace ? 1.5 : 3.5, sideBrace ? 3.5 : 1.5, color, transform, exploded)
+      } else {
+        box(`portable-${member.id}`, stage, category, member.center, member.size, color, transform, exploded, [7, 10, 3])
+      }
+      // Placement markers show the wood-to-wood joints; no porch anchors or post bases.
+      if (member.kind === 'drop') for (const end of [-1, 1]) {
+        fixing('portable-joint', [member.center[0] + member.size[0] / 2 + 0.04, member.center[1] + end * Math.max(0, member.size[1] / 2 - 1), member.center[2]], 'side', transform, exploded, 0.22)
+      }
+    })
+  }
+
   function supports(flight: SupportFlight, transform: Transform) {
     const exploded: Vec3 = [width + 10, 0, 0]
-    const ground = -flight.baseElevation
-    flight.rows.forEach((row, index) => {
-      const beamBottom = row.beamTop - row.beamDepth
-      for (const side of [-1, 1]) box(`bearing-beam-${index}`, 'supports', 'support', [0, row.beamTop - row.beamDepth / 2, row.z + side * row.beamWidth / 4], [row.beamLength, row.beamDepth, row.beamWidth / 2 - 0.05], COLORS.frame, transform, exploded, [6, 9, 2])
-      const xs = row.postPositions.map((position) => position - width / 2)
-      xs.forEach((x, postIndex) => {
-        footing(`support-footing-${index}-${postIndex}`, [x, ground - 0.1, row.z], transform, exploded)
-        box('support-base-plate', 'supports', 'hardware', [x, ground + 0.7, row.z], [row.postWidth + 1.25, 0.6, row.postWidth + 1.25], COLORS.metal, transform, exploded)
-        const height = row.postHeight - 1.25
-        box('independent-support-post', 'supports', 'support', [x, ground + 1.25 + height / 2, row.z], [row.postWidth, height, row.postWidth], COLORS.frame, transform, exploded)
-        for (const side of [-1, 1]) {
-          box('post-base-strap', 'supports', 'hardware', [x + side * (row.postWidth / 2 + 0.1), ground + 2.8, row.z], [0.15, 3, row.postWidth - 0.5], COLORS.metal, transform, exploded)
-          box('post-cap-strap', 'supports', 'hardware', [x + side * (row.postWidth / 2 + 0.1), beamBottom - 0.2, row.z], [0.15, 3.2, row.beamWidth + 0.75], COLORS.metal, transform, exploded)
-          fixing('post-cap', [x + side * (row.postWidth / 2 + 0.2), beamBottom - 0.5, row.z], 'side', transform, exploded, 0.28)
+    portableMembers(flight.members, transform, exploded)
+    if (flight.members.length) label([width + 10, Math.max(8, flight.rise * 0.55), flight.run * 0.4], '5 · Portable 2 × 4 frame', transform, 'part', ['exploded'], 'support')
+    if (flight.unresolved) label([width / 2 + 8, flight.rise * 0.4, flight.run * 0.4], 'Portable frame needs a revised detail', transform, 'note', ['framing'], 'support')
+  }
+
+  function sidePanels(risers: number, baseElevation: number, transform: Transform) {
+    if (config.sidePanel === 'open') return
+    const run = (risers - 1) * g.going
+    const rear = Math.max(0, (risers - 1) * g.riserHeight - g.treadThickness)
+    const bottom = -baseElevation
+    if (rear - bottom < 0.1 || run < 0.1) return
+    type Point = [number, number] // y, z
+    const boundary: Point[] = [[bottom, 0], [rear, 0], [0, run], [bottom, run]]
+    const clip = (polygon: Point[], distance: (point: Point) => number): Point[] => {
+      const result: Point[] = []
+      polygon.forEach((point, index) => {
+        const next = polygon[(index + 1) % polygon.length]
+        const a = distance(point)
+        const b = distance(next)
+        if (a >= -1e-7) result.push(point)
+        if ((a >= 0) !== (b >= 0)) {
+          const ratio = a / (a - b)
+          result.push([point[0] + (next[0] - point[0]) * ratio, point[1] + (next[1] - point[1]) * ratio])
         }
       })
-      if (xs.length > 1) {
-        const kneeRun = Math.min(24, (xs[xs.length - 1] - xs[0]) / 3)
-        const kneeDrop = Math.max(0, Math.min(24, row.postHeight - 2.4))
-        if (kneeDrop > 2) for (const face of [-1, 1]) for (const side of [-1, 1]) {
-          const x = side === -1 ? xs[0] : xs[xs.length - 1]
-          const z = row.z + face * (row.postWidth / 2 + 0.9)
-          beam('support-knee-brace', 'supports', 'support', [x, beamBottom - kneeDrop, z], [x - side * kneeRun, beamBottom - 0.5, z], 3.5, 1.5, COLORS.blocking, transform, exploded)
+      return result.filter((point, index) => index === 0 || Math.hypot(point[0] - result[index - 1][0], point[1] - result[index - 1][1]) > 0.0001)
+    }
+    for (const side of [-1, 1]) {
+      const exploded: Vec3 = [side * 18, 0, 0]
+      const outer = side * (width / 2 + 0.65)
+      function panel(id: string, profile: Point[], x: number, thickness: number) {
+        if (profile.length > 1 && Math.hypot(profile[0][0] - profile[profile.length - 1][0], profile[0][1] - profile[profile.length - 1][1]) < 0.0001) profile = profile.slice(0, -1)
+        profile = profile.filter((point, index) => {
+          const previous = profile[(index + profile.length - 1) % profile.length]
+          const next = profile[(index + 1) % profile.length]
+          return Math.abs((point[0] - previous[0]) * (next[1] - point[1]) - (point[1] - previous[1]) * (next[0] - point[0])) > 0.00001
+        })
+        if (profile.length < 3) return
+        const left: Vec3[] = profile.map(([y, z]) => [x - thickness / 2, y, z])
+        const right: Vec3[] = profile.map(([y, z]) => [x + thickness / 2, y, z])
+        const faces: SceneFace[] = [{ vertices: [...left].reverse(), color: finish }, { vertices: right, color: finish }]
+        for (let index = 0; index < profile.length; index++) {
+          const next = (index + 1) % profile.length
+          faces.push({ vertices: [left[index], left[next], right[next], right[index]], color: finish })
+        }
+        piece(id, 'complete', 'skirt', faces, transform, exploded, exploded)
+      }
+      if (config.sidePanel === 'solid') {
+        for (let y = bottom; y < rear; y += 5.625) {
+          const profile = clip(clip(boundary, ([py]) => py - y), ([py]) => y + 5.5 - py)
+          panel('wood-side-cladding', profile, outer, 0.75)
+        }
+      } else {
+        for (const slope of [-1, 1]) {
+          const values = boundary.map(([y, z]) => y + slope * z)
+          for (let value = Math.floor(Math.min(...values) / 8) * 8; value <= Math.max(...values); value += 8) {
+            const profile = clip(clip(boundary, ([y, z]) => y + slope * z - value), ([y, z]) => value + 1.06 - y - slope * z)
+            panel('wood-side-lattice', profile, outer + side * slope * 0.15, 0.25)
+          }
         }
       }
-      g.stringerPositions.forEach((position) => {
-        const x = position - width / 2
-        box('bearing-restraint-marker', 'fasteners', 'hardware', [x + 0.92, row.beamTop + 0.85, row.z + row.beamWidth / 2 - 0.1], [0.16, 2.6, 1.8], COLORS.metal, transform, exploded)
-        fixing('beam-restraint', [x + 1.04, row.beamTop + 1.2, row.z + row.beamWidth / 2 - 0.1], 'side', transform, exploded)
-      })
-    })
-    if (flight.rows.length) label([width + 10, flight.rows[0].beamTop + 9, flight.rows[0].z], '5 · Independent support frame', transform, 'part', ['exploded'], 'support')
-    if (flight.unresolved) label([width / 2 + 8, flight.rise * 0.4, flight.run * 0.4], 'Support detail still needs design', transform, 'note', ['framing'], 'support')
+      const trimX = outer + side * 0.5
+      for (const [from, to] of [
+        [[trimX, bottom + 0.75, 0], [trimX, bottom + 0.75, run]],
+        [[trimX, bottom, 0.75], [trimX, rear, 0.75]],
+        [[trimX, rear, 0], [trimX, 0, run]],
+      ] as [Vec3, Vec3][]) beam('wood-side-trim', 'complete', 'skirt', from, to, 0.75, 1.5, finish, transform, exploded)
+      if (baseElevation > 0) box('wood-side-end-trim', 'complete', 'skirt', [trimX, bottom / 2, run - 0.75], [0.75, baseElevation, 1.5], finish, transform, exploded, exploded)
+    }
+    label([width / 2 + 19, rear / 2, run / 2], config.sidePanel === 'lattice' ? 'Wood lattice side panels' : 'Wood side cladding', transform, 'part', ['exploded'], 'skirt')
+  }
+
+  function returnCaps(risers: number, transform: Transform) {
+    if (!config.returnCaps) return
+    const run = (risers - 1) * g.going
+    const high = risers * g.riserHeight - g.treadThickness - 0.5
+    const low = g.riserHeight - g.treadThickness - 0.5
+    const toeReturn = Math.min(8, width / 4)
+    for (const side of [-1, 1]) {
+      const x = side * (width / 2 + 1.75)
+      const exploded: Vec3 = [side * 13, 4, 0]
+      beam('wood-return-cap-long', 'complete', 'skirt', [x, high, -0.75], [x, low, run], 3.5, 0.75, finish, transform, exploded)
+      box('wood-return-cap-toe', 'complete', 'skirt', [x - side * toeReturn / 2, low, run], [toeReturn, 0.75, 3.5], finish, transform, exploded, exploded)
+    }
+    label([width / 2 + 15, high + 5, 0], '90° return caps', transform, 'part', ['exploded'], 'skirt')
   }
 
   function railing(risers: number, transform: Transform) {
@@ -227,14 +305,15 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     const height = risers * g.riserHeight
     const xs = g.stringerPositions.map((position) => position - width / 2)
     const nose = Math.max(0, g.noseProjection)
-    xs.forEach((x) => stringer(x, risers, transform))
+    const support = g.supportFlights.find((value) => value.flight === name)
+    xs.forEach((x) => stringer(x, risers, transform, support?.stringerBaseCut ?? 0))
     for (let step = 0; step < count; step++) {
       const y = (step + 1) * g.riserHeight
       const z = (count - step) * g.going
       for (let board = 0; board < g.boardsPerTread; board++) {
         const centerZ = z + nose - g.boardWidth / 2 - board * (g.boardWidth + g.boardGap)
         const exploded: Vec3 = [0, 17, (board - (g.boardsPerTread - 1) / 2) * -4]
-        box('tread-plank', 'treads', 'tread', [0, y - g.treadThickness / 2, centerZ], [width, g.treadThickness, g.boardWidth], finish, transform, exploded, [0, 18, 0])
+        box('tread-plank', 'treads', 'tread', [0, y - g.treadThickness / 2, centerZ], [width, g.treadThickness, g.boardWidth], treadFinish, transform, exploded, [0, 18, 0])
         xs.forEach((x) => [-1, 1].forEach((sign) => fixing('tread-screw', [x, y + 0.04, centerZ + sign * g.boardWidth * 0.29], 'top', transform, exploded)))
       }
     }
@@ -255,8 +334,9 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
       const depth = Math.min(5.5, top - 0.25)
       for (let index = 0; index < xs.length - 1; index++) box('between-stringer-blocking', 'blocking', 'blocking', [(xs[index] + xs[index + 1]) / 2, top - depth / 2, z], [xs[index + 1] - xs[index] - 1.5, depth, 1.5], COLORS.blocking, transform, [0, 7, -10], [0, 8, -10])
     }
-    const support = g.supportFlights.find((value) => value.flight === name)
     if (support) supports(support, transform)
+    sidePanels(risers, support?.baseElevation ?? 0, transform)
+    returnCaps(risers, transform)
     if (config.railing) railing(risers, transform)
     if (showLabels) {
       label([-width / 2 - 13, height * 0.45, run * 0.55], '1 · Notched stringers', transform, 'part', ['exploded'], 'stringer')
@@ -268,9 +348,6 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
   }
 
   function landing(size: number, height: number, transform: Transform) {
-    const frameDepth = 7.25
-    const top = height - g.treadThickness
-    const postTop = top - frameDepth
     const gap = g.landingBoardGap
     const boardWidths = Array.from({ length: g.landingDeckBoards }, (_, index) => index === g.landingDeckBoards - 1 ? size - index * (5.5 + gap) : 5.5)
     if (boardWidths.length > 1 && boardWidths[boardWidths.length - 1] < 1.5) {
@@ -278,22 +355,15 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
       const shared = (boardWidths[last] + boardWidths[last - 1]) / 2
       boardWidths[last] = boardWidths[last - 1] = shared
     }
-    const joists = Math.ceil((size - 1.5) / (config.material === 'composite' ? 9 : 16)) + 1
+    const joists = Math.ceil((size - 1.5) / (config.compositeTreads ? 9 : 16)) + 1
     const xs = Array.from({ length: joists }, (_, index) => -size / 2 + 0.75 + index * (size - 1.5) / (joists - 1))
     let z = -size
     boardWidths.forEach((boardWidth) => {
-      box('landing-tread-plank', 'treads', 'tread', [0, height - g.treadThickness / 2, z + boardWidth / 2], [size, g.treadThickness, boardWidth], finish, transform, [0, 17, 0], [0, 18, 0])
+      box('landing-tread-plank', 'treads', 'tread', [0, height - g.treadThickness / 2, z + boardWidth / 2], [size, g.treadThickness, boardWidth], treadFinish, transform, [0, 17, 0], [0, 18, 0])
       xs.forEach((x) => [0.21, 0.79].forEach((ratio) => fixing('landing-screw', [x, height + 0.04, z + boardWidth * ratio], 'top', transform, [0, 17, 0])))
       z += boardWidth + gap
     })
-    for (const edgeZ of [-0.75, -size + 0.75]) box('landing-rim', 'supports', 'support', [0, top - frameDepth / 2, edgeZ], [size, frameDepth, 1.5], COLORS.frame, transform)
-    xs.forEach((x) => box('landing-joist', 'supports', 'support', [x, top - frameDepth / 2, -size / 2], [1.5, frameDepth, size - 3], COLORS.frame, transform))
-    if (postTop > 1.5) for (const side of [-1, 1]) for (const edgeZ of [-3.5, -size + 3.5]) {
-      const x = side * (size / 2 - 3.5)
-      footing('landing-foundation', [x, -0.1, edgeZ], transform)
-      box('landing-post-base', 'supports', 'hardware', [x, 0.7, edgeZ], [6.75, 0.6, 6.75], COLORS.metal, transform)
-      box('landing-post', 'supports', 'support', [x, 1.25 + (postTop - 1.25) / 2, edgeZ], [5.5, postTop - 1.25, 5.5], COLORS.frame, transform)
-    }
+    portableMembers(g.portableLanding?.members ?? [], transform, [width + 10, 0, 0])
     if (config.railing) {
       const edges: [Vec3, Vec3][] = [[[-size / 2, height, -size], [size / 2, height, -size]], [[size / 2, height, -size], [size / 2, height, 0]]]
       const corners = [edges[0][0], edges[0][1], edges[1][1]]
@@ -331,8 +401,8 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
   const front = turning ? landingSize / 2 + g.lowerRun : config.run
   const upperTransform: Transform = { origin: [-landingSize / 2 - g.upperRun, landingHeight, 0], angle: Math.PI / 2 }
   concretePorch(turning ? { ...upperTransform, origin: [upperTransform.origin[0], 0, 0] } : IDENTITY)
-  box('ground-landing-allowance', 'site', 'concrete', [0, -0.85, front + 18], [width + 8, 1.25, 36], COLORS.cap, IDENTITY, ZERO, ZERO)
-  if (g.riserHeight > g.treadThickness) {
+  const floorFrameClearance = Math.max(0, ...g.supportFlights.map((flight) => flight.stringerBaseCut))
+  if (g.riserHeight > g.treadThickness && g.riserHeight - g.treadThickness >= floorFrameClearance) {
     if (turning) {
       const lowerTransform: Transform = { origin: [0, 0, landingSize / 2], angle: 0 }
       flight(g.lowerRisers, lowerTransform, 'lower', true)
@@ -343,7 +413,7 @@ export function buildStairGeometry(input: StairConfig): StairSceneGeometry {
     }
     if (config.ending === 'planter') for (const side of [-1, 1]) planter(side, front)
   } else {
-    label([0, config.rise + 5, config.run / 2], 'Use fewer rises or increase the height', IDENTITY, 'note', ['finished', 'framing', 'fasteners', 'exploded'])
+    label([0, config.rise + 5, config.run / 2], 'Use fewer rises or increase the height to clear the frame', IDENTITY, 'note', ['finished', 'framing', 'fasteners', 'exploded'])
   }
 
   const dim = (from: Vec3, to: Vec3, text: string) => dimensions.push({ from: scale(from, FT), to: scale(to, FT), label: text })

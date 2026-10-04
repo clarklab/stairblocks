@@ -1,5 +1,5 @@
 import type { PriceOverrides, StairConfig } from './planner'
-import { MAX_STAIR_WIDTH } from './planner'
+import { COMPOSITE_COLORS, MAX_STAIR_WIDTH } from './planner'
 
 export interface SavedProject {
   config: StairConfig
@@ -28,6 +28,12 @@ export function parseProject(input: unknown): SavedProject | null {
   if (!inRange(c.rise, 14, 84) || !inRange(c.run, 20, 144) || !inRange(c.width, 30, MAX_STAIR_WIDTH)) return null
   if (!inRange(c.risers, c.ending === 'turn' ? 4 : 3, 12) || !Number.isInteger(c.risers)) return null
   if (typeof c.railing !== 'boolean' || typeof c.closedRisers !== 'boolean') return null
+  if (c.compositeTreads !== undefined && typeof c.compositeTreads !== 'boolean') return null
+  if (c.returnCaps !== undefined && typeof c.returnCaps !== 'boolean') return null
+  if (c.sidePanel !== undefined && c.sidePanel !== 'open' && c.sidePanel !== 'lattice' && c.sidePanel !== 'solid') return null
+  const color = COMPOSITE_COLORS.find(color => color.id === (c.compositeColor === undefined ? 'gray' : c.compositeColor))
+  if (!color) return null
+  const legacyComposite = c.material === 'composite'
 
   const rawPrices = input.prices === undefined ? {} : input.prices
   if (!isRecord(rawPrices)) return null
@@ -45,8 +51,12 @@ export function parseProject(input: unknown): SavedProject | null {
       run: c.run,
       width: c.width,
       risers: c.risers,
-      material: c.material,
-      tread: c.material === 'composite' ? 'two6' : c.tread,
+      material: legacyComposite ? 'treated' : c.material as StairConfig['material'],
+      compositeTreads: legacyComposite || c.compositeTreads === true,
+      compositeColor: color.id,
+      sidePanel: c.sidePanel === undefined ? 'open' : c.sidePanel,
+      returnCaps: c.returnCaps === true,
+      tread: legacyComposite ? 'two6' : c.tread,
       ending: c.ending,
       railing: c.railing,
       closedRisers: c.closedRisers,

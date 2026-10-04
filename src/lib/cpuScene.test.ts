@@ -29,7 +29,7 @@ describe('software 3D rendering without a browser graphics context', () => {
 
   it('handles a turn and impossible short rises without invalid SVG coordinates', () => {
     for (const config of [
-      { ...DEFAULT_CONFIG, ending: 'turn' as const, material: 'composite' as const, risers: 10, rise: 70, run: 88 },
+      { ...DEFAULT_CONFIG, ending: 'turn' as const, compositeTreads: true, risers: 10, rise: 70, run: 88 },
       { ...DEFAULT_CONFIG, rise: 14, risers: 12 },
     ]) {
       const markup = renderToStaticMarkup(createElement(CpuStairScene, { ...base, config, view: 'exploded' }))
@@ -39,11 +39,11 @@ describe('software 3D rendering without a browser graphics context', () => {
   })
 
   it('keeps correct polygon ordering at maximum width, rise, run and stair count', () => {
-    const config = { ...DEFAULT_CONFIG, width: MAX_STAIR_WIDTH, rise: 84, run: 144, risers: 12, material: 'composite' as const, ending: 'turn' as const, railing: true }
+    const config = { ...DEFAULT_CONFIG, width: MAX_STAIR_WIDTH, rise: 84, run: 144, risers: 12, compositeTreads: true, ending: 'turn' as const, railing: true, sidePanel: 'lattice' as const, returnCaps: true }
     for (const view of ['finished', 'framing', 'exploded', 'fasteners'] as const) {
       const markup = renderToStaticMarkup(createElement(CpuStairScene, { ...base, config, view }))
       expect(markup).toContain(`${MAX_STAIR_WIDTH}″ wide`)
-      expect(markup).toContain('data-painter-fallback-polygons="0"')
+      expect(markup.match(/data-painter-fallback-polygons="(\d+)"/)?.[1], view).toBe('0')
       expect(markup).not.toMatch(/(?:NaN|Infinity)/)
     }
   })

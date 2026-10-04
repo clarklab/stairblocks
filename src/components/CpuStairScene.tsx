@@ -100,7 +100,7 @@ function buildPainter(polygons: Polygon[]): BspNode {
   const budget = { count: polygons.length, limit: Math.min(12000, Math.max(1800, polygons.length * 3)), serial: 0 };
   const build = (items: Polygon[], depth: number): BspNode => {
     if (!items.length) return { polygons: [] };
-    if (depth >= 32 || budget.count >= budget.limit) return { polygons: items, fallback: true };
+    if (depth >= 40 || budget.count >= budget.limit) return { polygons: items, fallback: true };
     const candidates = items.length <= 10 ? [items[0]] : Array.from({ length: 9 }, (_, i) => items[Math.floor(i * (items.length - 1) / 8)]);
     let best = candidates[0], score = Infinity;
     for (const candidate of candidates) {
@@ -183,6 +183,7 @@ export default function CpuStairScene(props: Props) {
   const plan = useMemo(() => calculatePlan(config), [config]);
   const invalidRise = plan.geometry.riserHeight <= plan.geometry.treadThickness;
   const stageIndex = buildStage ? STAGES.indexOf(buildStage) : 7;
+  const cameraShapeKey = [config.rise, config.run, config.width, config.risers, config.material, config.compositeTreads, config.sidePanel, config.returnCaps, config.tread, config.ending, config.railing, config.closedRisers].join('|');
 
   useLayoutEffect(() => {
     if (!root.current) return;
@@ -194,7 +195,7 @@ export default function CpuStairScene(props: Props) {
     return () => observer.disconnect();
   }, []);
 
-  useEffect(() => { setOrbit(preset(cameraView)); }, [cameraView, resetKey, view, geometry]);
+  useEffect(() => { setOrbit(preset(cameraView)); }, [cameraView, resetKey, view, cameraShapeKey]);
 
   useEffect(() => {
     const element = svg.current;
@@ -279,7 +280,7 @@ export default function CpuStairScene(props: Props) {
       else if (view === 'framing' && piece.category === 'tread') offset.set(0, 0.32, 0);
       else if (view === 'framing' && piece.category === 'riser') offset.set(0, 0.14, 0.2);
       if (buildStage && piece.stage === buildStage) offset.add(new Vector3(...(piece.assemblyOffset ?? piece.explodedOffset)).multiplyScalar(remaining));
-      const opacity = view === 'framing' ? piece.category === 'tread' ? 0.24 : piece.category === 'riser' ? 0.14 : piece.category === 'rail' ? 0.28 : 1 : 1;
+      const opacity = view === 'framing' ? piece.category === 'tread' ? 0.24 : piece.category === 'riser' ? 0.14 : piece.category === 'rail' ? 0.28 : piece.category === 'skirt' ? 0.12 : 1 : 1;
       piece.faces.forEach((face, index) => {
         const center = face.center.clone().add(offset);
         const entry = centers.get(piece.category) ?? { sum: new Vector3(), count: 0 };

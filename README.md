@@ -27,28 +27,30 @@ Netlify project `stairblocks` is connected to [clarklab/stairblocks](https://git
 
 - CPU-projected SVG 3D stairs with finished, framing, exploded, and fastener views. Three.js provides camera and vector math; no WebGL context or GPU renderer is needed.
 - Mouse/touch orbit, pinch/scroll zoom, and side/top camera views for desktop and mobile browsers.
-- Height, total run, width, and rise-count controls; planters and a two-flight 90-degree landing option.
-- Independent under-stair beams, posts, bases, footing and bracing allowances beside an existing concrete porch.
+- Height, total run, width, and rise-count controls; planter end caps and a two-flight 90-degree landing option.
+- Open sides, decorative lattice, or wood side panels, with access and drainage kept in the finishing plan.
+- Optional 90-degree side/end trim returns toward the porch, separate from the turning-stair layout.
+- A portable wood stair frame beside an existing concrete porch: rear 2 × 4 drops, forward bottom runners, crossrails, and bracing.
 - Stringers, tread planks, riser boards, blocking, hardware, and optional railing estimates.
 - Configuration-specific animated building segments with part counts, pause/resume/replay, optional auto-advance, and reduced-motion support.
-- Treated pine, cedar, and composite comparisons; actual nominal-versus-finished board sizes.
+- Treated pine or cedar for wood walking boards, risers, and decorative finishes, with a pressure-treated structural frame and optional colored composite walking boards; actual nominal-versus-finished board sizes.
 - Editable illustrative USD prices, stock-board quantities, kerf-aware cut lists, and 10% contingency.
 - Local autosave, JSON project export/import, CSV shopping/cut lists, and print-to-PDF.
 - Responsive mobile controls and dimension/geometry checks.
 
 ## Planning model and limitations
 
-The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Width is adjustable from 30 to 192 inches (16 feet); longer stock boards and additional supports are included as the stairs widen. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Switching layouts preserves the tread going when possible within the input limits.
+The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Width is adjustable from 30 to 192 inches (16 feet); stock quantities and support positions change as the stairs widen. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Switching layouts preserves the tread going when possible within the input limits.
 
-Physical treads use two 5.5-inch boards with a 0.125-inch gap, or a single 11.25-inch wood board. The app warns if these boards cannot cover the requested going. Composite uses two 1-inch decking boards with a 0.25-inch gap over treated structural framing. The 9-inch composite support assumption is an illustrative Trex Enhance-style layout, not a universal product specification.
+Wood treads use two 5.5-inch boards with a 0.125-inch gap, or a single 11.25-inch board. The app warns if these boards cannot cover the requested going. Optional composite walking boards use two 5.5-inch-wide, 1-inch-thick decking boards with a 0.25-inch gap; risers retain the selected wood and structural framing stays pressure-treated wood. Composite color changes appearance without replacing those wood parts. The 9-inch composite support assumption is an illustrative Trex Enhance-style layout, not a universal product specification. Wood stringers are spaced at no more than 16 inches in this model; tread species, grade, thickness, and actual product requirements still govern.
 
-Prices are editable example allowances, **not live retailer quotes**. Structural connections, footing sizing, railing systems, and landing framing include preliminary allowances. The porch shown is context and is not included as new construction. Cut-stringer blanks include a rough layout allowance; final stringer templates, bearing cuts, tread-thickness adjustments and connections must be verified on site. Decorative planters do not replace support or guards.
+Prices are editable example allowances, **not live retailer quotes**. Frame connections, bracing, railing systems, and turning-landing details remain preliminary. The existing concrete porch is context and is not included as new construction. Cut-stringer blanks include a rough layout allowance; final stringer templates, tread-thickness adjustments, support contact, and connections must be verified on site. Decorative planter end caps do not replace support or guards. Lattice and solid side panels are decorative cladding; they must preserve drainage and inspection access and are not counted as structural bracing. Optional 90-degree trim returns are side/end caps toward the porch, not a new walking surface or structural connection.
 
-Model-code checks reference the 2021 IRC and AWC DCA 6 and do not establish permit approval or structural adequacy. Verify locally adopted rules, manufacturer instructions, local availability, species/grade, ground conditions, and the independent support design before purchasing or building.
+Model-code checks reference the 2021 IRC and AWC DCA 6 and do not establish permit approval or structural adequacy. Verify locally adopted rules, manufacturer instructions, local availability, species/grade, the bearing surface, and the portable frame design before purchasing or building.
 
-Independent support beams and posts illustrate a gravity-load concept; they are not a validated freestanding structural system. The shared doubled 2 × 8 beams, bearing seats, top overhang, foundations, and bracing in both directions need a site-specific design. Low flights that lack space for the illustrated supports remain unresolved allowances. The existing concrete porch carries no modeled stair load, and no concrete anchors are specified.
+The portable-frame concept places rear 2 × 4 drops at both outer stringers and alternating interior stringers. Bottom 2 × 4 runners extend forward at right angles to the drops; crossrails and diagonal bracing tie the assembly together. The model specifies no concrete footings, anchored bases, or porch attachment. Abutting the existing porch is not assumed to prevent sliding or racking: the 2 × 4 joints, bearing, stability, and any turning-landing frame require a verified detail before use. “Portable” describes the frame arrangement, not a claim that the finished unit is safe to lift alone or structurally certified.
 
-The animated walkthrough adapts to the selected configuration and skips closed-riser work when those boards are off. Install structural fasteners during each stage; the fastener segment is a final inspection. Dimensions and counts are a planning aid, not fabrication-ready instructions.
+The animated walkthrough starts with the L-shaped drop-and-runner frames, then fits stringers, blocking, risers, and walking boards. It adapts to the selected configuration and skips closed-riser work when those boards are off. Treat concealed field cuts before assembly and install specified fasteners during each stage; the fastener segment is a final inspection. Dimensions and counts are a planning aid, not fabrication-ready instructions.
 
 Reference sources:
 

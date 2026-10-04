@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_CONFIG } from './planner'
+import { COMPOSITE_COLORS, DEFAULT_CONFIG } from './planner'
 import { parseProject } from './project'
 
 describe('project file validation', () => {
@@ -59,6 +59,32 @@ describe('project file validation', () => {
     const config = { ...DEFAULT_CONFIG, material: 'composite', tread: 'one12' }
     expect(parseProject({ config })?.config.tread).toBe('two6')
     expect(config.tread).toBe('one12')
+  })
+
+  it('migrates old wood and composite files without losing dimensions or price overrides', () => {
+    const legacy = { rise: 36, run: 44, width: 144, risers: 5, material: 'composite', tread: 'two6', ending: 'open', railing: false, closedRisers: true }
+    for (const version of [undefined, 1]) {
+      const composite = parseProject({ version, config: legacy, prices: { 'composite-treads-2-12ft': 55 } })!
+      expect(composite.config).toEqual({ ...DEFAULT_CONFIG, width: 144, compositeTreads: true })
+      expect(composite.prices['composite-treads-2-12ft']).toBe(55)
+      const cedar = parseProject({ version, config: { ...legacy, material: 'cedar', tread: 'one12' } })!
+      expect(cedar.config).toEqual({ ...DEFAULT_CONFIG, width: 144, material: 'cedar', tread: 'one12' })
+    }
+  })
+
+  it('round-trips independent wood, remembered tread layout, composite colors and finishes', () => {
+    for (const color of COMPOSITE_COLORS) {
+      for (const sidePanel of ['open', 'lattice', 'solid'] as const) {
+        const config = { ...DEFAULT_CONFIG, material: 'cedar' as const, tread: 'one12' as const, compositeTreads: true, compositeColor: color.id, sidePanel, returnCaps: true }
+        expect(parseProject(JSON.parse(JSON.stringify({ version: 1, config })))?.config).toEqual(config)
+      }
+    }
+  })
+
+  it('rejects malformed new settings rather than silently changing a saved plan', () => {
+    for (const patch of [{ compositeTreads: 'false' }, { compositeTreads: null }, { compositeColor: 'invalid' }, { compositeColor: null }, { sidePanel: 'stone' }, { sidePanel: null }, { returnCaps: 1 }]) {
+      expect(parseProject({ config: { ...DEFAULT_CONFIG, ...patch } })).toBeNull()
+    }
   })
 
   it('rejects invalid price values without coercing them to free materials', () => {
