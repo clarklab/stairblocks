@@ -2,7 +2,7 @@ import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState } from 
 import type { CSSProperties, ReactNode } from 'react';
 import { ArrowDownToLine, ArrowRight, ArrowUpRight, BookOpen, Check, CheckCheck, ChevronDown, ChevronRight, CircleHelp, Cuboid, Eye, Hammer, Layers3, Leaf, ListChecks, Maximize, Minus, MousePointer2, Move3D, Play, Plus, Ruler, RotateCcw, Save, ShieldCheck, SlidersHorizontal, X } from 'lucide-react';
 const StairScene = lazy(() => import('./components/StairScene'));
-import { calculatePlan, DEFAULT_CONFIG } from './lib/planner';
+import { calculatePlan, DEFAULT_CONFIG, MAX_STAIR_WIDTH } from './lib/planner';
 import type { StairConfig, PriceOverrides } from './lib/planner';
 import { parseProject } from './lib/project';
 import BuildWalkthrough from './components/BuildWalkthrough';
@@ -96,7 +96,7 @@ export default function App() {
           <section className="config-section">{sectionHeader('dimensions','01','Dimensions',`${config.rise}″ rise · ${config.width}″ wide`)}{openSection === 'dimensions' && <div className="section-body">
             <DimensionInput label="Total height" icon={<ArrowUpRight size={14}/>} value={config.rise} min={14} max={84} onChange={v=>update('rise',v)} helper="Finished ground to concrete porch surface."/>
             <DimensionInput label="Total run" icon={<ArrowRight size={14}/>} value={config.run} min={20} max={144} onChange={v=>update('run',v)} helper={config.ending==='turn' ? 'Both flights combined; landing is extra.' : 'Space the treads cover on the ground.'}/>
-            <DimensionInput label="Stair width" icon={<Ruler size={14}/>} value={config.width} min={30} max={96} onChange={v=>update('width',v)} helper="The full width of each tread plank."/>
+            <DimensionInput label="Stair width" icon={<Ruler size={14}/>} value={config.width} min={30} max={MAX_STAIR_WIDTH} onChange={v=>update('width',v)} helper="Full plank length across the stairs · up to 16 ft."/>
             <div className="riser-stepper"><div><label>Number of rises</label><p>{plan.geometry.treadCount} treads{config.ending==='turn'?' + landing':''} + porch</p></div><div className="stepper"><button type="button" aria-label="Fewer rises" disabled={config.risers<=(config.ending==='turn'?4:3)} onClick={()=>update('risers',config.risers-1)}><Minus size={13}/></button><output aria-label="Number of rises">{config.risers}</output><button type="button" aria-label="More rises" disabled={config.risers>=12} onClick={()=>update('risers',config.risers+1)}><Plus size={13}/></button></div></div>
             <button type="button" className="text-button auto-fit" onClick={()=>{const risers=Math.max(config.ending==='turn'?4:3,Math.min(12,Math.ceil(config.rise/7.5))); setConfig(c=>({...c,risers,run:(risers-(c.ending==='turn'?2:1))*11}));setToast('Rises and run adjusted to a comfortable starting layout.');}}><Ruler size={13}/>Suggest a comfortable layout<ArrowRight size={13}/></button>
           </div>}</section>

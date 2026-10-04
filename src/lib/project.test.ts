@@ -27,11 +27,20 @@ describe('project file validation', () => {
     for (const patch of [
       { rise: 13.99 }, { rise: 84.01 }, { rise: NaN }, { rise: '35' },
       { run: 19.99 }, { run: 144.01 }, { run: Infinity },
-      { width: 29.99 }, { width: 96.01 },
+      { width: 29.99 }, { width: 192.01 },
       { risers: 2 }, { risers: 13 }, { risers: 4.5 },
     ]) expect(parseProject({ config: { ...DEFAULT_CONFIG, ...patch } })).toBeNull()
     expect(parseProject({ config: { ...DEFAULT_CONFIG, rise: 14, run: 20, width: 30, risers: 3 } })).not.toBeNull()
-    expect(parseProject({ config: { ...DEFAULT_CONFIG, rise: 84, run: 144, width: 96, risers: 12 } })).not.toBeNull()
+    expect(parseProject({ config: { ...DEFAULT_CONFIG, rise: 84, run: 144, width: 192, risers: 12 } })).not.toBeNull()
+  })
+
+  it('preserves wider stairs when exported, imported, and loaded from device storage', () => {
+    for (const width of [96.25, 120, 144, 180, 192]) {
+      const config = { ...DEFAULT_CONFIG, width }
+      const exported = JSON.parse(JSON.stringify({ version: 1, config, prices: {} }))
+      expect(parseProject(exported)?.config).toEqual(config)
+      expect(parseProject({ config })?.config).toEqual(config)
+    }
   })
 
   it('rejects turns with fewer than four risers so form values match the rendered plan', () => {

@@ -1,4 +1,5 @@
 import type { PriceOverrides, StairConfig } from './planner'
+import { MAX_STAIR_WIDTH } from './planner'
 
 export interface SavedProject {
   config: StairConfig
@@ -24,7 +25,7 @@ export function parseProject(input: unknown): SavedProject | null {
   if (c.material !== 'treated' && c.material !== 'cedar' && c.material !== 'composite') return null
   if (c.ending !== 'open' && c.ending !== 'planter' && c.ending !== 'turn') return null
   if (c.tread !== 'two6' && c.tread !== 'one12') return null
-  if (!inRange(c.rise, 14, 84) || !inRange(c.run, 20, 144) || !inRange(c.width, 30, 96)) return null
+  if (!inRange(c.rise, 14, 84) || !inRange(c.run, 20, 144) || !inRange(c.width, 30, MAX_STAIR_WIDTH)) return null
   if (!inRange(c.risers, c.ending === 'turn' ? 4 : 3, 12) || !Number.isInteger(c.risers)) return null
   if (typeof c.railing !== 'boolean' || typeof c.closedRisers !== 'boolean') return null
 

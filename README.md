@@ -38,7 +38,7 @@ Netlify project `stairblocks` is connected to [clarklab/stairblocks](https://git
 
 ## Planning model and limitations
 
-The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Switching layouts preserves the tread going when possible within the input limits.
+The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Width is adjustable from 30 to 192 inches (16 feet); longer stock boards and additional supports are included as the stairs widen. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Switching layouts preserves the tread going when possible within the input limits.
 
 Physical treads use two 5.5-inch boards with a 0.125-inch gap, or a single 11.25-inch wood board. The app warns if these boards cannot cover the requested going. Composite uses two 1-inch decking boards with a 0.25-inch gap over treated structural framing. The 9-inch composite support assumption is an illustrative Trex Enhance-style layout, not a universal product specification.
 

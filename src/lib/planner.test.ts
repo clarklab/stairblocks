@@ -50,6 +50,22 @@ describe('stair geometry and checks', () => {
     expect(plan.materials.every((item) => item.unitPrice >= 0 && Number.isFinite(item.total))).toBe(true)
     expect(plan.checks.find((check) => check.id === 'input')?.status).toBe('warn')
   })
+
+  it('keeps 8 feet as the default and scales 16-foot stairs without shortening the boards', () => {
+    const starter = calculatePlan(DEFAULT_CONFIG)
+    const wide = calculatePlan({ ...DEFAULT_CONFIG, width: 192 })
+    expect(DEFAULT_CONFIG.width).toBe(96)
+    expect(wide.config.width).toBe(192)
+    expect(wide.geometry.stringerCount).toBe(13)
+    expect(wide.geometry.stringerSpacing).toBeLessThanOrEqual(16)
+    expect(wide.geometry.supportFlights[0].rows[0].postPositions).toHaveLength(5)
+    const treads = wide.cutList.filter(item => item.id.startsWith('treated-treads-'))
+    expect(treads.reduce((sum, item) => sum + item.quantity, 0)).toBe(8)
+    expect(treads.every(item => item.length === 192 && item.stockLength === 192)).toBe(true)
+    expect(wide.materials.find(item => item.id === 'support-footings')?.quantity).toBe(5)
+    expect(wide.total).toBeGreaterThan(starter.total)
+    expect(wide.checks.some(check => check.id === 'input')).toBe(false)
+  })
 })
 
 describe('purchased stock and material budgets', () => {
@@ -99,6 +115,13 @@ describe('purchased stock and material budgets', () => {
     expect(turn.screwCount).toBeGreaterThan(straight.screwCount)
   })
 
+  it('budgets guards on both edges of a wide landing and flags its unresolved support design', () => {
+    const plan = calculatePlan({ ...DEFAULT_CONFIG, width: 192, ending: 'turn', railing: true })
+    expect(plan.geometry.landingSize).toBe(192)
+    expect(plan.materials.find(item => item.id === 'landing-guard')?.total).toBe(1440)
+    expect(plan.checks.find(check => check.id === 'landing-support')?.status).toBe('warn')
+  })
+
   it('covers the landing without counting an extra gap beyond its last board', () => {
     for (const width of [44.875, 45, 48, 90]) {
       const plan = calculatePlan({ ...DEFAULT_CONFIG, ending: 'turn', width, run: 33 })
@@ -138,7 +161,7 @@ describe('purchased stock and material budgets', () => {
     expect(plan.materials.find((item) => item.id === 'support-restraint')?.quantity).toBe(bearingRows * geometry.stringerCount)
     expect(plan.cutList.find((item) => item.id.startsWith('stringers-lower-'))?.length).toBeCloseTo(Math.hypot(14, 11) + 12)
     expect(plan.cutList.find((item) => item.id.startsWith('stringers-upper-'))?.length).toBeCloseTo(Math.hypot(21, 22) + 12)
-    expect(plan.checks.filter((check) => check.status === 'warn').map((check) => check.id)).toEqual(['span'])
+    expect(plan.checks.filter((check) => check.status === 'warn').map((check) => check.id)).toEqual(['span', 'landing-support'])
   })
 
   it('preserves total rise and combined run through odd and even turn splits', () => {

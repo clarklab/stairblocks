@@ -97,7 +97,7 @@ const PLANE_EPSILON = 0.000015;
 
 /** A bounded BSP painter resolves overlapping wide boards without a GPU depth buffer. */
 function buildPainter(polygons: Polygon[]): BspNode {
-  const budget = { count: polygons.length, limit: Math.min(9000, Math.max(1800, polygons.length * 3)), serial: 0 };
+  const budget = { count: polygons.length, limit: Math.min(12000, Math.max(1800, polygons.length * 3)), serial: 0 };
   const build = (items: Polygon[], depth: number): BspNode => {
     if (!items.length) return { polygons: [] };
     if (depth >= 32 || budget.count >= budget.limit) return { polygons: items, fallback: true };
@@ -161,6 +161,11 @@ function orderedPolygons(node: BspNode, camera: PerspectiveCamera, output: Polyg
   if (far) orderedPolygons(far, camera, output);
   output.push(...node.polygons);
   if (near) orderedPolygons(near, camera, output);
+}
+
+function fallbackPolygonCount(node: BspNode): number {
+  if (node.fallback) return node.polygons.length;
+  return (node.front ? fallbackPolygonCount(node.front) : 0) + (node.back ? fallbackPolygonCount(node.back) : 0);
 }
 
 export default function CpuStairScene(props: Props) {
@@ -295,7 +300,8 @@ export default function CpuStairScene(props: Props) {
       const corners: Point[] = [[min.x, -0.02, min.z], [max.x, -0.02, min.z], [max.x, -0.02, max.z], [min.x, -0.02, max.z]];
       return corners;
     });
-    return { tree: buildPainter(polygons), centers, visibleCategories, shadows };
+    const tree = buildPainter(polygons);
+    return { tree, fallbackPolygons: fallbackPolygonCount(tree), centers, visibleCategories, shadows };
   }, [prepared, stageIndex, invalidRise, view, progress, buildStage]);
 
   const rendered = useMemo(() => {
@@ -402,7 +408,7 @@ export default function CpuStairScene(props: Props) {
   };
 
   return <div ref={root} style={{ width: '100%', height: '100%', minHeight: 120 }}>
-    <svg ref={svg} data-renderer="cpu-svg" data-animation-progress={progress.toFixed(3)} data-build-stage={buildStage ?? 'complete'}
+    <svg ref={svg} data-renderer="cpu-svg" data-animation-progress={progress.toFixed(3)} data-build-stage={buildStage ?? 'complete'} data-painter-fallback-polygons={worldScene.fallbackPolygons}
       role="img" aria-label="Interactive 3D stair model. Drag to rotate, pinch or scroll to zoom, and use two fingers or Shift-drag to pan. Arrow keys rotate; plus and minus zoom; Home resets the view."
       tabIndex={0} width="100%" height="100%" viewBox={`0 0 ${size.width} ${size.height}`}
       onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={pointerUp} onKeyDown={keyboard} onContextMenu={(event) => event.preventDefault()}

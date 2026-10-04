@@ -2,7 +2,7 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import CpuStairScene from '../components/CpuStairScene'
-import { DEFAULT_CONFIG } from './planner'
+import { DEFAULT_CONFIG, MAX_STAIR_WIDTH } from './planner'
 
 describe('software 3D rendering without a browser graphics context', () => {
   const base = { config: DEFAULT_CONFIG, dimensions: true, resetKey: 0, cameraView: 'perspective' as const }
@@ -34,6 +34,16 @@ describe('software 3D rendering without a browser graphics context', () => {
     ]) {
       const markup = renderToStaticMarkup(createElement(CpuStairScene, { ...base, config, view: 'exploded' }))
       expect(markup).toContain('data-renderer="cpu-svg"')
+      expect(markup).not.toMatch(/(?:NaN|Infinity)/)
+    }
+  })
+
+  it('keeps correct polygon ordering at maximum width, rise, run and stair count', () => {
+    const config = { ...DEFAULT_CONFIG, width: MAX_STAIR_WIDTH, rise: 84, run: 144, risers: 12, material: 'composite' as const, ending: 'turn' as const, railing: true }
+    for (const view of ['finished', 'framing', 'exploded', 'fasteners'] as const) {
+      const markup = renderToStaticMarkup(createElement(CpuStairScene, { ...base, config, view }))
+      expect(markup).toContain(`${MAX_STAIR_WIDTH}″ wide`)
+      expect(markup).toContain('data-painter-fallback-polygons="0"')
       expect(markup).not.toMatch(/(?:NaN|Infinity)/)
     }
   })

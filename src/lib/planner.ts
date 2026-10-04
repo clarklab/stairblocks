@@ -3,6 +3,8 @@ export type Material = 'treated' | 'cedar' | 'composite'
 export type Tread = 'two6' | 'one12'
 export type Ending = 'open' | 'planter' | 'turn'
 export type PriceOverrides = Record<string, number>
+/** Full-width boards can use the longest stock length modeled by the planner. */
+export const MAX_STAIR_WIDTH = 192
 
 export interface StairConfig {
   rise: number
@@ -179,7 +181,7 @@ function normalizeConfig(input: StairConfig): StairConfig {
   return {
     rise: positive(input.rise, DEFAULT_CONFIG.rise, 240),
     run: positive(input.run, DEFAULT_CONFIG.run, 360),
-    width: Math.max(12, positive(input.width, DEFAULT_CONFIG.width, 144)),
+    width: Math.max(12, positive(input.width, DEFAULT_CONFIG.width, MAX_STAIR_WIDTH)),
     risers: Math.max(input.ending === 'turn' ? 4 : 2, Math.min(36, Math.round(positive(input.risers, DEFAULT_CONFIG.risers, 36)))),
     material: ['treated', 'cedar', 'composite'].includes(input.material) ? input.material : 'treated',
     tread: input.tread === 'one12' ? 'one12' : 'two6',
@@ -346,7 +348,7 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
     lumber('landing-joists', 'Treated 2 × 8 landing frame', 'Joists and two rim members; sizing is a budgeting assumption, not a span check.', landingJoists + 2, landingSize, 1.85, 'options')
     lumber('landing-posts', 'Treated 6 × 6 landing post', 'Four rough post blanks; finish height and bearing depend on landing elevation and site.', 4, Math.max(24, lowerRisers * riserHeight + 12), 5.4, 'options')
     add('landing-foundations', 'Landing footings + hardware allowance', 'Four footing locations with post bases, caps and frame connectors. Soil, frost depth, lateral bracing and sizing remain to be designed.', 4, 'allowance', 72, 'options')
-    if (railing) add('landing-guard', 'Landing guard allowance', 'Additional exposed landing edge guard budget; includes posts and attachment allowance.', 1, 'allowance', Math.max(100, landingSize / 12 * 45), 'options')
+    if (railing) add('landing-guard', 'Landing guard allowance', 'Both exposed landing edges; includes posts and attachment allowance.', 1, 'allowance', Math.max(100, 2 * landingSize / 12 * 45), 'options')
   }
 
   const check = (id: string, condition: boolean, title: string, detail: string) => checks.push({ id, status: condition ? 'pass' : 'warn', title, detail })
@@ -368,6 +370,7 @@ export function calculatePlan(input: StairConfig = DEFAULT_CONFIG, priceOverride
   checks.push({ id: 'spacing', status: 'info', title: `${stringerCount} stringers${isTurn ? ' per flight' : ''} · ${inchLabel(stringerSpacing)} centers`, detail: material === 'composite' ? 'Budget uses a 9″ maximum based on the Trex Enhance stair-spacing example, not a rating for every composite board. Your selected product’s stair-span, fastening and installation instructions govern.' : `Budget uses at most ${maxSpacing}″ centers. Tread species, grade, thickness and the applicable stair-span instructions govern; this spacing is a planning assumption.` })
   if (material === 'composite' && tread === 'one12') checks.push({ id: 'composite-wide', status: 'warn', title: 'Composite uses two deck boards', detail: 'A 12″ composite fascia board is not assumed to be a structural stair tread. The model substitutes two 5½″ decking boards.' })
   if (isTurn) checks.push({ id: 'turn', status: 'info', title: `${lowerRisers} + ${upperRisers} rises with a turn landing`, detail: `The ${inchLabel(lowerRun)} and ${inchLabel(upperRun)} flight runs total ${inchLabel(run)}; the ${inchLabel(landingSize)} landing is extra. Both stringer sets, landing frame, posts and footing allowances are included; connections and lateral bracing still need design.` })
+  if (isTurn) checks.push({ id: 'landing-support', status: 'warn', title: 'Turn landing support needs design', detail: `This ${inchLabel(landingSize)} square landing shows an illustrative 2 × 8 frame on four corner posts. Its beams, joist spans and foundations have not been sized. Intermediate supports or larger members may be needed; their cost is not included in this preliminary allowance.` })
   if (Object.keys(config).some((key) => config[key as keyof StairConfig] !== input[key as keyof StairConfig])) checks.push({ id: 'input', status: 'warn', title: 'Some inputs were adjusted', detail: 'Invalid or out-of-range values were replaced or limited to keep the preview usable. Review the dimensions before using this estimate.' })
 
   const subtotal = roundMoney(materials.reduce((sum, item) => sum + item.total, 0))
