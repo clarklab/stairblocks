@@ -37,15 +37,16 @@ function DimensionInput({ label, value, onChange, min, max, rangeValues, helper,
   label: string; value: number; onChange: (v: number) => number | void;
   min: number; max: number; rangeValues?: number[]; helper: string; icon: ReactNode;
 }) {
-  const [draft, setDraft] = useState(String(value));
-  useEffect(() => setDraft(String(value)), [value]);
+  const displayValue = String(Number(value.toFixed(3)));
+  const [draft, setDraft] = useState(displayValue);
+  useEffect(() => setDraft(displayValue), [displayValue]);
   const commit = () => {
     const next = Number(draft);
     if (draft.trim() && Number.isFinite(next)) {
       const bounded = Math.max(min, Math.min(max, next));
-      const accepted = bounded === value ? value : onChange(bounded);
-      setDraft(String(accepted ?? bounded));
-    } else setDraft(String(value));
+      const accepted = bounded === Number(displayValue) ? value : onChange(bounded);
+      setDraft(String(Number((accepted ?? bounded).toFixed(3))));
+    } else setDraft(displayValue);
   };
   // Indexing the covered runs lets keyboard arrows cross gaps between valid layouts.
   const sliderMin = rangeValues ? 0 : min;
@@ -58,7 +59,7 @@ function DimensionInput({ label, value, onChange, min, max, rangeValues, helper,
     <div className="control-line"><label htmlFor={id}>{icon}{label}</label><div className="number-input">
       <input id={id} name={id} type="number" min={min} max={max} step="any" value={draft}
         onChange={e => setDraft(e.target.value)} onBlur={commit}
-        onKeyDown={e => { if(e.key==='Enter') e.currentTarget.blur(); if(e.key==='Escape') setDraft(String(value)); }}/><span>in</span>
+        onKeyDown={e => { if(e.key==='Enter') e.currentTarget.blur(); if(e.key==='Escape') setDraft(displayValue); }}/><span>in</span>
     </div></div>
     <input className="range" name={`${id}-slider`} type="range" aria-label={`${label} slider`} aria-valuetext={`${num(value)} inches`}
       min={sliderMin} max={sliderMax} step={rangeValues ? 1 : 0.25} value={sliderValue} disabled={sliderMax <= sliderMin}
