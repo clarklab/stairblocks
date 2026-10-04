@@ -27,7 +27,7 @@ Netlify project `stairblocks` is connected to [clarklab/stairblocks](https://git
 
 - CPU-projected SVG 3D stairs with finished, framing, exploded, and fastener views. Three.js provides camera and vector math; no WebGL context or GPU renderer is needed.
 - Mouse/touch orbit, pinch/scroll zoom, and side/top camera views for desktop and mobile browsers.
-- Height, total run, width, and rise-count controls; planter end caps and a two-flight 90-degree landing option.
+- Coupled height, total run, and rise-count controls: run edits keep porch height fixed and choose the nearest covered tread layout; independent width control; planter end caps and a two-flight 90-degree landing option.
 - Open sides, decorative lattice, or wood side panels, with access and drainage kept in the finishing plan.
 - Optional 90-degree side/end trim returns toward the porch, separate from the turning-stair layout.
 - A portable wood stair frame beside an existing concrete porch: rear 2 × 4 drops, forward bottom runners, crossrails, and bracing.
@@ -40,7 +40,7 @@ Netlify project `stairblocks` is connected to [clarklab/stairblocks](https://git
 
 ## Planning model and limitations
 
-The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Width is adjustable from 30 to 192 inches (16 feet); stock quantities and support positions change as the stairs widen. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Switching layouts preserves the tread going when possible within the input limits.
+The starter layout is 96 inches wide, 36 inches from finished ground to porch surface, with no handrails selected. Width is adjustable from 30 to 192 inches (16 feet); stock quantities and support positions change as the stairs widen. Existing saved dimensions are preserved. All dimensions are inches. Straight stairs have one fewer tread than rises because the porch is the upper landing. Turning stairs have two fewer treads plus an intermediate landing; their total run is the sum of both flight runs, excluding the landing. Changing height recalculates a suitable rise count and run. Changing run preserves the measured porch height, chooses a feasible rise count, and snaps to the nearest run the selected tread boards can cover. The actual result and any adjustment are shown explicitly; not every requested height/run combination is available. Manual rise counts, tread changes, and layout changes use the same dimension solver. Switching layouts preserves the tread going when possible within the input limits. Imported dimensions remain unchanged until a layout control is edited or a layout is suggested.
 
 Wood treads use two 5.5-inch boards with a 0.125-inch gap, or a single 11.25-inch board. The app warns if these boards cannot cover the requested going. Optional composite walking boards use two 5.5-inch-wide, 1-inch-thick decking boards with a 0.25-inch gap; risers retain the selected wood and structural framing stays pressure-treated wood. Composite color changes appearance without replacing those wood parts. The 9-inch composite support assumption is an illustrative Trex Enhance-style layout, not a universal product specification. Wood stringers are spaced at no more than 16 inches in this model; tread species, grade, thickness, and actual product requirements still govern.
 
@@ -68,6 +68,7 @@ Reference sources:
 - `src/components/BuildWalkthrough.tsx`: segment controls and assembly instructions
 - `src/lib/buildSteps.ts`: configuration-specific instructions and parts
 - `src/lib/planner.ts`: shared dimensions, takeoff, cutting stock, prices, and checks
+- `src/lib/layout.ts`: coupled dimension solver and feasible control limits
 - `src/lib/project.ts`: saved-project validation
 - `src/lib/*.test.ts`: calculation and persistence validation tests
 - `src/styles.css`: responsive interface and print styles
