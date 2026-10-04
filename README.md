@@ -19,7 +19,9 @@ npm run preview
 
 ## Netlify
 
-Import this repository into Netlify. The included `netlify.toml` selects Node 22, runs `npm run build`, and publishes `dist`. No server, environment variables, API keys, or database are required. `dist` can also be deployed with Netlify's manual deploy flow.
+Production URL: [boards.wims.vc](https://boards.wims.vc).
+
+Netlify project `stairblocks` is connected to [clarklab/stairblocks](https://github.com/clarklab/stairblocks). Pushes to `main` automatically build and publish production; pull requests create deploy previews. The included `netlify.toml` selects Node 22, runs `npm run build`, and publishes `dist`. No server, environment variables, API keys, or database are required.
 
 ## Features
 
